@@ -1,0 +1,43 @@
+name: Build Aseprite (Windows only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: '要编译的分支/标签/提交号（默认 main）'
+        required: false
+        default: 'main'
+        type: string
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout Aseprite source (with submodules)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install Ninja
+        uses: aseprite/get-ninja@main
+
+      - name: Setup MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build (auto download Skia + compile)
+        shell: bash
+        run: |
+          bash build.sh --auto --norun
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: aseprite-windows-x64-${{ inputs.ref || 'main' }}
+          path: build/bin/
+          if-no-files-found: error
