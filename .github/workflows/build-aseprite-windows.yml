@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Checkout Aseprite source (with submodules)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
           submodules: recursive
@@ -35,8 +35,53 @@ jobs:
         run: |
           bash build.sh --auto --norun
 
+      - name: Bundle runtime DLLs (OpenSSL etc.)
+        shell: pwsh
+        run: |
+          $bin = "build/bin"
+          if (-not (Test-Path $bin)) { throw "build/bin not found" }
+
+          Write-Host "== build/bin contents =="
+          Get-ChildItem -Force $bin | Select-Object Name,Length
+
+          # Try to find common runtime DLLs required by aseprite.exe and copy them next to the executable.
+          $needed = @(
+            "libcrypto-3-x64.dll","libssl-3-x64.dll",
+            "libcrypto-1_1-x64.dll","libssl-1_1-x64.dll"
+          )
+          $searchRoots = @(
+            "C:\Program Files\OpenSSL",
+            "C:\OpenSSL",
+            "C:\Strawberry",
+            "C:\tools",
+            "C:\vcpkg",
+            "C:\Program Files\Git",
+            "C:\Windows\System32"
+          ) | Where-Object { Test-Path $_ }
+
+          foreach ($name in $needed) {
+            if (Test-Path (Join-Path $bin $name)) {
+              Write-Host "Already present: $name"
+              continue
+            }
+            $found = $null
+            foreach ($root in $searchRoots) {
+              $found = Get-ChildItem -Path $root -Filter $name -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($found) { break }
+            }
+            if ($found) {
+              Copy-Item $found.FullName -Destination $bin -Force
+              Write-Host "Copied $name from $($found.FullName)"
+            } else {
+              Write-Host "Not found on runner: $name"
+            }
+          }
+
+          Write-Host "== build/bin after bundling =="
+          Get-ChildItem -Force $bin | Select-Object Name,Length
+
       - name: Upload build output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: aseprite-windows-x64-${{ inputs.ref || 'main' }}
           path: build/bin/
